@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tile-raster-debug"
+version = "1.0.0"
+description = "零依赖计算式瓦片光栅渲染器与光栅调试视窗（保守分箱/次序恢复/真实覆盖与负载图）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+tile-raster-gui = "tile_raster.cli:main"
+
+[tool.setuptools]
+packages = ["tile_raster"]
+
+[tool.setuptools.package-data]
+tile_raster = ["web/*.html", "web/*.css", "web/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

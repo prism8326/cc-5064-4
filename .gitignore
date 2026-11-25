@@ -23,3 +23,7 @@ __pycache__/
 *.log
 .env
 .env.*
+
+# 本地渲染产物（CLI/调试输出）
+out/
+*.pyc

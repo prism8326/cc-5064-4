@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>瓦片光栅调试视窗 · Tile Raster Debug View</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">▦</span>
+    <div>
+      <h1>瓦片光栅调试视窗</h1>
+      <p class="sub">分箱 → 瓦片真实覆盖/插值/深度/混合 → 写回 · 最终像素均由 Python 瓦片执行器产生</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span id="health" class="health">连接中…</span>
+    <button id="btn-check" class="btn">运行一致性自检</button>
+  </div>
+</header>
+
+<div id="error-banner" class="error-banner hidden">
+  <strong>⚠ 瓦片光栅异常：</strong>
+  <span id="error-text"></span>
+  <pre id="error-trace" class="hidden"></pre>
+  <button id="error-close" class="banner-close">×</button>
+</div>
+
+<main class="layout">
+  <aside class="panel controls">
+    <h2>瓦片参数</h2>
+
+    <label class="field">
+      <span>场景</span>
+      <select id="scene">
+        <option value="paper">半透明彩纸溢出 (paper)</option>
+        <option value="dense">密集小三角 (dense)</option>
+        <option value="giant">超大覆盖三角形 (giant)</option>
+        <option value="empty">空场景 (empty)</option>
+        <option value="tiny">极小/亚像素 (tiny)</option>
+        <option value="depth-order">深度混合次序 (depth-order)</option>
+        <option value="midway">跨瓦中途溢出 (midway, tile24/cap4)</option>
+      </select>
+    </label>
+    <p id="scene-desc" class="hint"></p>
+
+    <div class="grid2">
+      <label class="field"><span>画布宽</span><input id="width" type="number" min="32" max="640" step="8" value="96"></label>
+      <label class="field"><span>画布高</span><input id="height" type="number" min="24" max="480" step="8" value="72"></label>
+    </div>
+
+    <label class="field">
+      <span>瓦片尺寸 <b id="tile-val">24px</b></span>
+      <input id="tile" type="range" min="4" max="64" step="2" value="24">
+    </label>
+
+    <label class="field">
+      <span>候选桶容量 <b id="cap-val">6</b> 个 seq/瓦</span>
+      <input id="bucket" type="range" min="1" max="40" step="1" value="6">
+    </label>
+
+    <label class="field">
+      <span>额外缓冲容量 <b id="extra-val">1</b> 个快照槽</span>
+      <input id="extra" type="range" min="1" max="8" step="1" value="1">
+    </label>
+
+    <label class="field">
+      <span>溢出分箱策略</span>
+      <select id="strategy">
+        <option value="continuation">分批续绘（封存前缀 + 按序补绘）</option>
+        <option value="rebin">重分桶（倍增容量重扫回填）</option>
+      </select>
+    </label>
+
+    <div class="grid2">
+      <label class="field">
+        <span>工作组完成顺序</span>
+        <select id="order">
+          <option value="serial">serial 行优先</option>
+          <option value="shuffle" selected>shuffle 打乱</option>
+        </select>
+      </label>
+      <label class="field"><span>随机种子</span><input id="seed" type="number" value="7"></label>
+    </div>
+
+    <label class="checkline">
+      <input id="fault" type="checkbox">
+      <span>故障注入：移除可信底图（乱序后应报错而非错像素）</span>
+    </label>
+
+    <button id="btn-render" class="btn primary block">▶ 渲染瓦片管线</button>
+    <button id="btn-lab" class="btn block">⚗ 运行彩纸溢出/重读实验</button>
+
+    <div class="legend">
+      <h3>视图说明</h3>
+      <p><b>覆盖图</b>：每像素真实几何覆盖次数（overdraw 热力）+ 瓦片边界。</p>
+      <p><b>计算负载</b>：每瓦片实际覆盖片元数热力，非列表长度统计。</p>
+    </div>
+  </aside>
+
+  <section class="content">
+    <div id="kpis" class="kpis"></div>
+
+    <div class="views">
+      <figure class="view-card">
+        <figcaption>最终图像（瓦片执行器实际产出）</figcaption>
+        <div class="img-wrap checker"><img id="img-final" alt="final"></div>
+      </figure>
+      <figure class="view-card">
+        <figcaption>覆盖图 · 真实覆盖次数</figcaption>
+        <div class="img-wrap checker"><img id="img-coverage" alt="coverage"></div>
+      </figure>
+      <figure class="view-card">
+        <figcaption>计算负载 · 每瓦覆盖片元</figcaption>
+        <div class="img-wrap checker"><img id="img-load" alt="load"></div>
+      </figure>
+    </div>
+
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="tiles">瓦片诊断</button>
+        <button class="tab" data-tab="diag">缓冲诊断</button>
+        <button class="tab" data-tab="lab">溢出实验室</button>
+        <button class="tab" data-tab="check">一致性 / 基准</button>
+      </div>
+
+      <div id="tab-tiles" class="tabpane active">
+        <div class="table-scroll">
+          <table id="tile-table">
+            <thead><tr>
+              <th>tile#</th><th>坐标</th><th>状态</th><th>ids</th>
+              <th>溢出seq</th><th>续绘批</th><th>rebin</th>
+              <th>base重读</th><th>覆盖片元</th><th>像素测试</th>
+              <th>混合读</th><th>深度拒</th><th>ms</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-diag" class="tabpane">
+        <ul id="diag-list" class="diag-list"></ul>
+        <div id="bin-events" class="table-scroll"></div>
+      </div>
+
+      <div id="tab-lab" class="tabpane">
+        <div id="lab-empty" class="placeholder">选择 paper 场景后点击“运行彩纸溢出/重读实验”。实验固定在 96×72、tile=24、A=(1,1)、B=(2,1)。</div>
+        <div id="lab-content" class="hidden"></div>
+      </div>
+
+      <div id="tab-check" class="tabpane">
+        <div class="check-actions">
+          <button id="btn-check2" class="btn primary">运行 200+ 配置一致性自检</button>
+          <button id="btn-bench" class="btn">运行 dense/giant/empty 基准</button>
+        </div>
+        <pre id="check-out" class="console">尚未运行。</pre>
+        <div id="bench-out" class="bench-grid"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  图形入口：<code>python -m tile_raster gui</code>
+  命令行辅助：<code>python -m tile_raster render|check|bench|lab</code>
+  零第三方依赖 · Python 标准库
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
