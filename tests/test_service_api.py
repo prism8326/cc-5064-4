@@ -91,6 +91,34 @@ class HttpServerTests(unittest.TestCase):
         self.assertEqual(status, 422)
         self.assertEqual(data["error_type"], "OrderUnrecoverableError")
 
+    def test_render_payload_carries_zero_anomaly_evidence(self):
+        payload = render_payload({"scene": "midway", "tile": 24,
+                                  "bucket_capacity": 4})
+        self.assertIn("rule_evidence", payload)
+        self.assertTrue(payload["rule_evidence"]["ok"])
+        self.assertEqual(payload["anomalies"], [])
+        totals = payload["rule_evidence"]["totals"]
+        self.assertGreater(totals["covered_fragments"], 0)
+
+    def test_http_tile_rules_endpoint(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/tile-rules",
+            data=b"{}", headers={"Content-Type": "application/json"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=180) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+        self.assertTrue(data["ok"], "\n".join(data.get("lines", [])))
+        self.assertEqual(data["failed_issues"], [])
+        self.assertIn("mini_grid", data)
+
+    def test_http_get_tile_rules_alias(self):
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{self.port}/api/tile-rules", timeout=180) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+        self.assertIn("ok", data)
+
 
 if __name__ == "__main__":
     unittest.main()

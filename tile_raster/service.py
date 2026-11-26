@@ -13,6 +13,7 @@ from .diagnostics import buffer_diagnosis
 from .executor import ExecuteConfig, TileExecutor
 from .overflow_lab import run_overflow_lab
 from .scene import SCENE_FACTORIES, build_scene
+from .tile_rules import rule_evidence, run_tile_rules_suite
 
 LIMITS = {
     "width": (32, 640),
@@ -100,6 +101,7 @@ def render_payload(params: dict) -> dict:
 
     metrics = result.metrics_dict()
     diagnosis = buffer_diagnosis(metrics)
+    evidence = rule_evidence(result)
     return {
         "ok": True,
         "params": p,
@@ -109,6 +111,8 @@ def render_payload(params: dict) -> dict:
         "load_png": _b64(result.load_png_bytes()),
         "metrics": metrics,
         "diagnosis": diagnosis,
+        "rule_evidence": evidence,
+        "anomalies": evidence["anomalies"],
     }
 
 
@@ -147,3 +151,21 @@ def check_payload() -> dict:
 
 def bench_payload() -> dict:
     return {"ok": True, "benchmarks": benchmark_scenes(repeat=5)}
+
+
+def tile_rules_payload(params: dict | None = None) -> dict:
+    """瓦片规则校验的 API 形态：现场复算，不读手改数据。"""
+    params = params or {}
+    verify_docs = not bool(params.get("no_docs", False))
+    ok, report, lines = run_tile_rules_suite(
+        verify_docs=verify_docs, write_files=False)
+    return {
+        "ok": ok,
+        "lines": lines,
+        "issue_count": len(report.get("issues", [])),
+        "failed_issues": [
+            i for i in report.get("issues", []) if not i.get("ok")
+        ],
+        "mini_grid": report.get("claims", {}).get("mini_grid"),
+        "long_chain_scope": report.get("claims", {}).get("long_chain_scope"),
+    }

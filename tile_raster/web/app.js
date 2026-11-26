@@ -79,6 +79,69 @@ function gatherParams() {
 
 function fmt(n) { return (n ?? 0).toLocaleString("zh-CN"); }
 
+// ---- 运行状态 + 覆盖/负载/归属/溢出异常标出 ----
+function setBadge(id, state, text) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = "rule-badge " + state; // ok | bad | pending
+}
+
+function setRunState(kind, text) {
+  const bar = $("run-status");
+  bar.classList.remove("idle", "running", "ok", "bad");
+  bar.classList.add(kind);
+  $("run-status-text").textContent = "运行状态：" + text;
+}
+
+function renderRunStatus(payload) {
+  const m = payload.metrics, p = payload.params;
+  const ev = payload.rule_evidence || { ok: true, checks: [], anomalies: payload.anomalies || [] };
+  const anomalies = ev.anomalies || [];
+  const t = ev.totals || {};
+  const scopeBad = (scope) => anomalies.filter((a) => a.scope === scope);
+  const covBad = scopeBad("coverage"), loadBad = scopeBad("load");
+  const ownBad = scopeBad("ownership"), ovfBad = scopeBad("overflow").concat(scopeBad("order"));
+
+  setBadge("badge-coverage", covBad.length ? "bad" : "ok",
+    covBad.length ? `覆盖图异常 ×${covBad.length}` : "覆盖集合 ✓ 与执行证据一致");
+  setBadge("badge-load", loadBad.length ? "bad" : "ok",
+    loadBad.length ? `计算负载异常 ×${loadBad.length}` : "计算负载 ✓ cover和=load");
+  setBadge("badge-ownership", ownBad.length ? "bad" : "ok",
+    ownBad.length ? `片元归属异常 ×${ownBad.length}` : "片元归属 ✓ 瓦集不相交");
+
+  const chips = [];
+  chips.push(`<span class="chip">${m.cols || "?"}×${m.rows || "?"} 瓦</span>`);
+  chips.push(`<span class="chip">覆盖像素 ${fmt(t.covered_pixels)}</span>`);
+  chips.push(`<span class="chip">片元 ${fmt(t.covered_fragments)}</span>`);
+  chips.push(`<span class="chip ${t.overflow_tiles ? "chip-warn" : ""}">溢出瓦 ${t.overflow_tiles ?? "?"}</span>`);
+  if (ovfBad.length) chips.push(`<span class="chip chip-bad">溢出/顺序异常 ×${ovfBad.length}</span>`);
+  $("anomaly-chips").innerHTML = chips.join("");
+
+  const panel = $("anomaly-panel");
+  if (anomalies.length) {
+    panel.classList.remove("hidden");
+    $("anomaly-list").innerHTML = anomalies.map((a) =>
+      `<li><code>[${a.scope}/${a.check_id}]</code> ${a.msg}` +
+      (a.actual !== undefined && a.actual !== null
+        ? ` <pre class="mini-pre">${JSON.stringify(a.actual).slice(0, 400)}</pre>` : "") +
+      `</li>`).join("");
+    setRunState("bad",
+      `渲染完成但规则核对发现 ${anomalies.length} 项异常（${p.scene} ` +
+      `${p.width}×${p.height} tile${p.tile_w} cap${p.bucket_capacity} ` +
+      `${p.strategy}/${p.work_order} seed${p.seed}）。角标与下方红条已标出覆盖图/计算负载问题。`);
+  } else {
+    panel.classList.add("hidden");
+    $("anomaly-list").innerHTML = "";
+    setRunState("ok",
+      `瓦片管线运行完成且规则核对 PASS：${p.scene} ${p.width}×${p.height} · ` +
+      `tile ${p.tile_w}×${p.tile_h} · cap ${p.bucket_capacity} · ${p.strategy} · ` +
+      `${p.work_order}(seed ${p.seed}) · 覆盖 ${fmt(t.covered_pixels)} 像素 / ` +
+      `${fmt(t.covered_fragments)} 片元 · 溢出瓦 ${t.overflow_tiles ?? 0} · ` +
+      "覆盖集合、负载、归属与溢出状态均与执行证据一致。");
+  }
+}
+
 function renderKpis(m) {
   const t = m.timings_ms, tot = m.total, b = m.binning;
   const k = [
@@ -151,6 +214,7 @@ async function doRender() {
   clearError();
   const btn = $("btn-render");
   btn.disabled = true; btn.textContent = "渲染中…";
+  setRunState("running", "正在分箱并逐瓦片执行真实覆盖/插值/深度/混合…");
   try {
     const p = gatherParams();
     lastParams = p;
@@ -161,7 +225,12 @@ async function doRender() {
     renderKpis(data.metrics);
     renderTileTable(data.metrics);
     renderDiag(data);
+    renderRunStatus(data);
   } catch (e) {
+    setRunState("bad", "瓦片光栅运行失败：" + e.message);
+    setBadge("badge-coverage", "bad", "未完成");
+    setBadge("badge-load", "bad", "未完成");
+    setBadge("badge-ownership", "bad", "未完成");
     showError(e.message, e.payload?.traceback);
   } finally {
     btn.disabled = false; btn.textContent = "▶ 渲染瓦片管线";
@@ -277,6 +346,26 @@ async function doCheck() {
 }
 $("btn-check").onclick = doCheck;
 $("btn-check2").onclick = doCheck;
+
+// ---- 瓦片规则校验（小网格 + 换序归属 + 长链范围 + 文档声明） ----
+async function doTileRules() {
+  const out = $("rules-out");
+  const btn = $("btn-rules");
+  btn.disabled = true;
+  out.textContent = "瓦片规则校验运行中：净计算小网格、覆盖集合、溢出状态、换序归属与长链范围…";
+  try {
+    const r = await api("/api/tile-rules", {});
+    out.textContent = (r.lines || []).join("\n") +
+      `\n\n总体：${r.ok ? "RULES PASS" : "RULES FAIL（" + r.failed_issues.length + " 项失败）"}`;
+    out.className = "console " + (r.ok ? "console-ok" : "console-bad");
+  } catch (e) {
+    out.textContent = "瓦片规则校验请求失败：" + e.message;
+    out.className = "console console-bad";
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("btn-rules").onclick = doTileRules;
 
 async function doBench() {
   const box = $("bench-out");

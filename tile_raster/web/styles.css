@@ -165,3 +165,40 @@ tr:hover td { background: #182133; }
   .layout { grid-template-columns: 1fr; }
   .controls { position: static; }
 }
+
+/* ---- 运行状态条 / 规则角标 / 异常面板 ---- */
+.run-status {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--line); border-left-width: 4px;
+  background: var(--panel); border-radius: 8px;
+  padding: 9px 14px; margin-bottom: 12px; font-size: 13px;
+}
+.run-status .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+.run-status.idle { border-left-color: var(--muted); color: var(--muted); }
+.run-status.running { border-left-color: var(--accent); }
+.run-status.running .status-dot { background: var(--accent); animation: pulse 1s infinite; }
+.run-status.ok { border-left-color: var(--accent-2); }
+.run-status.ok .status-dot { background: var(--accent-2); }
+.run-status.bad { border-left-color: var(--danger); background: #2a141a; }
+.run-status.bad .status-dot { background: var(--danger); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.chips { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.chip { font-size: 11px; font-family: var(--mono); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 9px; color: var(--muted); background: #0b0f18; }
+.chip-warn { color: var(--warn); border-color: #6b531a; }
+.chip-bad { color: #ffd9df; background: #3a1620; border-color: #7f2b3c; }
+
+.rule-badge { float: right; font-size: 11px; font-weight: 600; border-radius: 999px;
+  padding: 1px 10px; border: 1px solid var(--line); color: var(--muted); }
+.rule-badge.ok { color: #0c2b20; background: var(--accent-2); border-color: var(--accent-2); }
+.rule-badge.bad { color: #ffd9df; background: #7f2b3c; border-color: var(--danger); }
+.rule-badge.pending { font-weight: 400; }
+
+.anomaly-panel { border: 1px solid #7f2b3c; background: #2a141a; color: #ffd9df;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
+.anomaly-panel ul { margin: 8px 0 0; padding-left: 20px; }
+.anomaly-panel li { margin: 4px 0; }
+.mini-pre { margin: 4px 0 0; font-size: 11px; color: #f3b6c0; white-space: pre-wrap;
+  word-break: break-all; max-height: 120px; overflow: auto; }
+.console-ok { border-color: #1f6e54; }
+.console-bad { border-color: #7f2b3c; color: #ffb3c0; }

@@ -101,19 +101,35 @@
   </aside>
 
   <section class="content">
+    <div id="run-status" class="run-status idle" role="status" aria-live="polite">
+      <span class="status-dot"></span>
+      <span id="run-status-text">运行状态：尚未渲染。调整左侧瓦片参数后点击“渲染瓦片管线”。</span>
+      <span id="anomaly-chips" class="chips"></span>
+    </div>
+    <div id="anomaly-panel" class="anomaly-panel hidden">
+      <strong>⚠ 规则核对异常（覆盖集合 / 计算负载 / 片元归属 / 溢出状态）：</strong>
+      <ul id="anomaly-list"></ul>
+    </div>
+
     <div id="kpis" class="kpis"></div>
 
     <div class="views">
       <figure class="view-card">
-        <figcaption>最终图像（瓦片执行器实际产出）</figcaption>
+        <figcaption>最终图像（瓦片执行器实际产出）
+          <span id="badge-ownership" class="rule-badge pending">归属待核对</span>
+        </figcaption>
         <div class="img-wrap checker"><img id="img-final" alt="final"></div>
       </figure>
       <figure class="view-card">
-        <figcaption>覆盖图 · 真实覆盖次数</figcaption>
+        <figcaption>覆盖图 · 真实覆盖次数
+          <span id="badge-coverage" class="rule-badge pending">覆盖集合待核对</span>
+        </figcaption>
         <div class="img-wrap checker"><img id="img-coverage" alt="coverage"></div>
       </figure>
       <figure class="view-card">
-        <figcaption>计算负载 · 每瓦覆盖片元</figcaption>
+        <figcaption>计算负载 · 每瓦覆盖片元
+          <span id="badge-load" class="rule-badge pending">负载待核对</span>
+        </figcaption>
         <div class="img-wrap checker"><img id="img-load" alt="load"></div>
       </figure>
     </div>
@@ -152,9 +168,11 @@
 
       <div id="tab-check" class="tabpane">
         <div class="check-actions">
-          <button id="btn-check2" class="btn primary">运行 200+ 配置一致性自检</button>
+          <button id="btn-rules" class="btn primary">运行瓦片规则校验（边界/归属/覆盖集合/溢出/换序）</button>
+          <button id="btn-check2" class="btn">运行 200+ 配置一致性自检</button>
           <button id="btn-bench" class="btn">运行 dense/giant/empty 基准</button>
         </div>
+        <pre id="rules-out" class="console">瓦片规则校验尚未运行。它会在服务端净计算 8×8 小网格、超长工作链范围并核对 docs/tile-rules.md 声明。</pre>
         <pre id="check-out" class="console">尚未运行。</pre>
         <div id="bench-out" class="bench-grid"></div>
       </div>
@@ -163,9 +181,10 @@
 </main>
 
 <footer class="footer">
-  图形入口：<code>python -m tile_raster gui</code>
-  命令行辅助：<code>python -m tile_raster render|check|bench|lab</code>
-  零第三方依赖 · Python 标准库
+  图形入口（主要交互）：<code>python -m tile_raster gui</code> ·
+  瓦片规则校验：<code>python -m tile_raster tile-rules</code> ·
+  小网格参考：<code>python -m tile_raster mini-grid</code><br>
+  命令行 <code>render|check|bench|lab|maintenance|samples</code> 仅为无界面辅助，不能替代视窗交互 · 零第三方依赖 · Python 标准库
 </footer>
 
 <script src="app.js"></script>

@@ -14,7 +14,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .service import bench_payload, check_payload, lab_payload, render_payload
+from .service import (
+    bench_payload,
+    check_payload,
+    lab_payload,
+    render_payload,
+    tile_rules_payload,
+)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -46,6 +52,9 @@ def _make_handler():
             path = urlparse(self.path).path
             if path == "/api/health":
                 self._send_json(200, {"ok": True, "service": "tile-raster-gui"})
+                return
+            if path == "/api/tile-rules":
+                self._send_json(200, tile_rules_payload({}))
                 return
             static = _STATIC.get(path)
             if static is None:
@@ -80,6 +89,13 @@ def _make_handler():
                     self._send_json(200 if payload.get("ok") else 422, payload)
                 elif path == "/api/check":
                     self._send_json(200, check_payload())
+                elif path == "/api/tile-rules":
+                    self._send_json(200, tile_rules_payload(params))
+                elif path == "/api/maintenance":
+                    from .maintenance import run_maintenance_suite
+                    ok, report, lines = run_maintenance_suite(update=False)
+                    self._send_json(200 if ok else 422,
+                                    {"ok": ok, "lines": lines, "report": report})
                 elif path == "/api/bench":
                     self._send_json(200, bench_payload())
                 else:

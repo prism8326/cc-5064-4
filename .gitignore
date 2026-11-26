@@ -27,3 +27,8 @@ __pycache__/
 # 本地渲染产物（CLI/调试输出）
 out/
 *.pyc
+
+# 瓦片规则校验/小网格的本地产物（净目录外运行时不污染仓库）
+tile_rules_out/
+mini_grid_out/
+tile_rules_report.json

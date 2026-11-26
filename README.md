@@ -48,7 +48,7 @@ python3 -m tile_raster gui --no-browser --host 0.0.0.0 --port 8765
 ## 30 秒自检
 
 ```bash
-# 27 个 unittest（分箱 / 像素一致性 / 溢出实验室 / HTTP API）
+# 54 个 unittest（分箱 / 像素一致性 / 溢出实验室 / 瓦片规则反伪报 / 文档维护漂移 / HTTP API）
 python3 -m unittest discover -s tests -v
 
 # 一键性质自检：252 个像素一致性配置 + 策略对比 + 中途溢出 + 容量增长证明
@@ -58,8 +58,56 @@ python3 -m tile_raster check
 python3 -m tile_raster render --scene paper --outdir out/paper
 ```
 
-最近一次结果：`Ran 27 tests ... OK`；`check` 输出 `总体: ALL PASS`
+最近一次结果：`Ran 54 tests ... OK`；`check` 输出 `总体: ALL PASS`
 （252 个配置全部逐字节一致）。
+
+---
+
+## 瓦片规则校验 · 小网格覆盖集合可复算
+
+分箱、瓦片边界与片元归属的权威约定写在
+[`docs/tile-rules.md`](docs/tile-rules.md)，并由可执行校验守护。**校验可在
+任意净目录运行**：覆盖集合与溢出状态全部从代码现场复算，不读取 `out/`
+下的历史 PNG/metrics，也不依赖任何手改数据。
+
+```bash
+# 瓦片规则总校验：8×8 小网格 + 换序归属 + 超长续读链范围 + 文档声明核对
+python3 -m tile_raster tile-rules            # 证据写到 ./tile_rules_out/
+
+# 真正的净目录跑法（报告/产物都落在新建临时目录，仓库零污染）
+python3 -m tile_raster tile-rules --out "$(mktemp -d)/rules"
+
+# 小网格生成 + 独立参考绘制（JSON/ASCII/PPM/放大 PNG）
+python3 -m tile_raster mini-grid --out "$(mktemp -d)/mini"
+python3 scripts/small_grid_reference.py --out /tmp/mini   # 等价脚本入口
+
+# 维护校验：文档声明必须与复算结果逐字段一致 + 全部旧样例净目录运行到底
+python3 -m tile_raster maintenance
+python3 scripts/check_tile_rules.py          # 瓦片规则的脚本入口
+```
+
+小网格固定为 8×8 屏幕、tile=4（2×2 瓦）、**显式** `bucket_capacity=2` 与
+`max_bucket_capacity=64`（容量限制和溢出处理不借用默认配置）：seq0 跨全部
+四瓦，seq1/2 是跨过 x=4 瓦界的共边四边形，seq3–6 是重瓦 (1,1) 内 2×2
+overdraw。复算结果：44 个覆盖像素、48 个覆盖片元（4 次 overdraw），四个瓦的
+覆盖和分别为 5 / 14 / 9 / 20；溢出瓦 `(0,0)@seq2`、`(1,0)@seq2`、
+`(1,1)@seq4`。文档中的机器可读声明块由
+`python3 -m tile_raster maintenance --update` 刷新，过期即校验失败（不允许
+伪报 PASS；另有变异测试证明改错文档会被抓到）。
+
+`long_chain_scope` 以“溢出时按原序再次分桶”的 rebin 为参照扫描链长
+`1…256`：硬上限 32 以内 continuation/rebin 的有序 id、覆盖集合、像素完全
+一致；超过硬上限后 rebin 必须抛 `BufferCapacityError`，而游标续读仍精确还原。
+
+### 陈旧 `out/` 材料的处置
+
+`out/` 在 `.gitignore` 中，是可再生产物。仓库里若残留旧尺寸/旧命名的 PNG
+（例如 dense 128×96 的历史样例），用样例运行器在净目录复跑或原地刷新：
+
+```bash
+python3 -m tile_raster samples --verify-only           # 全部内置旧样例跑到底
+python3 -m tile_raster samples --clean --legacy-names --out out   # 刷新历史文件名
+```
 
 ---
 
@@ -136,8 +184,9 @@ python3 -m tile_raster render --scene paper --outdir out/paper
 ## 专门的“跨瓦中途溢出”场景
 
 `midway`（96×48，tile=24，cap=4）：4 个小三角严格只落在瓦片 R=(1,0) 并把桶**恰好填满**，
-随后的 `midway-bridge` 横跨 `(0,0) (1,0) (2,0)` 三个瓦片。按 ty→tx 处理到跨度内第 2 个
-瓦片 R 时该桶溢出，因此两种策略都记录同一个事件：
+随后的 `midway-bridge` 横跨 `(0,0) (1,0) (2,0)` 三个瓦片。分箱阶段对该图元的
+保守跨度按 **ty→tx** 落桶（这是确定的分箱遍历序，与并行工作组执行顺序无关），
+到跨度内第 2 个瓦片 R 时该桶溢出，因此两种策略都记录同一个事件：
 
 ```text
 midway_in_primitive=True, tile=(1,0), span_index=2/3, seq=4
@@ -187,13 +236,17 @@ tile_raster/
   executor.py       TileExecutor、TrustedBase、瓦片诊断、RenderResult/热力图
   overflow_lab.py   跨瓦纸边缘重读、LRU 快照缓存、可信底图恢复/故障
   benchmarks.py     252 配置一致性矩阵、策略对比、容量增长证明、基准
+  tile_rules.py     瓦片规则校验：归属图/覆盖集合/溢出证据/换序归属/长链范围
+  mini_grid.py      8×8 可复算小网格 + 独立暴力参考绘制（JSON/ASCII/PPM/PNG）
+  maintenance.py    文档声明块复算核对（--update）+ 维护校验
+  samples.py        旧样例净目录批量运行与 out/ 陈旧材料刷新
   diagnostics.py    缓冲/容量中文诊断
   imaging.py        标准库 PPM/PNG 编码与热力 LUT
   service.py        参数校验 + render/lab/check/bench 的 JSON-safe 负载
   server.py         ThreadingHTTPServer 与静态资源/API 路由
   cli.py            gui/render/check/bench/lab
   web/              index.html / styles.css / app.js（原生 JS + Canvas）
-tests/              27 个 unittest（含真实 HTTP 服务测试）
+tests/              54 个 unittest（瓦片规则反伪报/维护漂移/净目录子进程/真实 HTTP 服务）
 docs/gui.md         调试视窗使用说明
 run_gui.py          根目录图形启动器
 ```
@@ -206,6 +259,10 @@ run_gui.py          根目录图形启动器
 python3 -m tile_raster gui [--host 127.0.0.1] [--port 8765] [--no-browser]
 python3 -m tile_raster render --scene paper --tile 24 --bucket-capacity 6 \
     --strategy continuation --work-order shuffle --seed 7 --outdir out/paper
+python3 -m tile_raster tile-rules [--out tile_rules_out] [--clean] [--no-docs]
+python3 -m tile_raster maintenance [--update]
+python3 -m tile_raster mini-grid --out /tmp/mini
+python3 -m tile_raster samples --verify-only
 python3 -m tile_raster check [--json out/check.json]
 python3 -m tile_raster bench --repeat 5 [--out out/bench.json]
 python3 -m tile_raster lab --bucket-capacity 6 --extra 1 --seed 7 [--fault]
@@ -215,7 +272,9 @@ python3 -m tile_raster lab --bucket-capacity 6 --extra 1 --seed 7 [--fault]
 
 ## 验证方式与环境限制
 
-- 全部算法/API 由 `tests/` 的 27 个 unittest 与 `check` 的 252 配置矩阵守护。
+- 全部算法/API 由 `tests/` 的 54 个 unittest 与 `check` 的 252 配置矩阵守护；
+  其中 `test_tile_rules.py` 含净目录子进程入口与手改覆盖/溢出状态必被抓的反伪报用例，
+  `test_maintenance.py` 含改错文档 claims 必 FAIL 的漂移用例。
 - Web 后端经真实 `ThreadingHTTPServer` 测试（健康检查、静态首页、render、参数错误 400、
   故障 lab 422）。
 - 前端逻辑用 jsdom 加载真实 `app.js` 并对接真实后端做过运行时冒烟

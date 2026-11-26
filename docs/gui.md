@@ -69,6 +69,35 @@ python3 -m tile_raster gui --no-browser --host 0.0.0.0 --port 8765
 - 可信底图不可用且次序已无法恢复：`OrderUnrecoverableError`（实验室 HTTP 422），
   界面明确报错而**不会显示伪造的正确结果**。
 
+### 运行状态与覆盖图 / 计算负载异常核对
+
+参数栏点击“渲染瓦片管线”后，图像区上方的**运行状态条**会经历
+`运行状态：…渲染中… → PASS / 异常`，无需看终端即可确认管线是否跑完：
+
+- PASS 状态会回显本次全部瓦片参数（场景、宽高、`tile_w/tile_h`、
+  `bucket_capacity`、`strategy`、`work_order(seed)`），以及覆盖像素数、
+  真实片元数与溢出瓦数。
+- 每张图标题右侧有规则角标：
+  - **覆盖图**：核对全帧/每瓦覆盖集合与串行参考、以及
+    `sum(cover) == TileStats.covered`；不一致时显示“覆盖图异常 ×N”。
+  - **计算负载**：核对每瓦覆盖计数和是否等于
+    `TileDiagnostic.load_fragments`；不一致时显示“计算负载异常 ×N”。
+  - **最终图像**：核对片元归属（像素唯一属于 `y//tile_h, x//tile_w` 瓦）
+    与工作组顺序排列；异常时显示“片元归属异常”。
+- 状态条右侧 chips 给出瓦网格、覆盖像素、片元、溢出瓦；任何异常都会在
+  下方红条列出 `scope/check_id` 与实测值（覆盖集合或负载差额）。这些核对
+  全部来自后端 `rule_evidence`，与 `python -m tile_raster tile-rules`
+  使用同一份代码，不会出现界面与 CLI 两套结论。
+
+调整瓦片参数并核对的推荐动作：拖动“瓦片尺寸（tile）”与“候选桶容量”，
+分别用 `continuation` / `rebin`、`serial` / `shuffle` 渲染同一场景，
+确认三张图与角标始终一致、溢出瓦数随 cap 变化。
+“一致性 / 基准”选项卡中的“运行瓦片规则校验”按钮调用 `/api/tile-rules`，
+在视窗内直接给出小网格覆盖集合、换序归属与超长链范围结果。
+
+> CLI（`render/check/tile-rules/...`）只是无界面辅助；上述参数拖动、
+> 角标、状态条与选项卡交互必须在光栅调试视窗中完成，CLI 不能替代。
+
 ## HTTP API（供脚本调用）
 
 | 方法/路径 | 作用 |
